@@ -1,5 +1,5 @@
 @echo off
-SET VERSION=1.0.0
+SET VERSION=1.1.0
 
 REM Create the version directory under dist
 mkdir dist\%VERSION%

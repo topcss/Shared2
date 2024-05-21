@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Shared2 局域网文件共享</title>
+    <title>Document</title>
 
     <style>
         html,
@@ -51,28 +51,240 @@
             margin: 2px 5px;
         }
     </style>
+    <script src="vue.min.js"></script>
 </head>
 
 <body>
-    <h2>局域网文件共享 Shared2</h2>
-    <input type="file" id="fileInput" multiple hidden>
-    <div id="toolbar">
-        <button id="downloadButton">&#x1F4E5; 下载文件</button>
-        <button id="uploadButton" onclick="fileInput.click()">&#x1F4E4; 上传文件</button>
-        <button id="refreshButton">&#x21BB; 刷新</button>
-        <button id="addFolderButton">&#x1F4C1; 添加文件夹</button>
-        <button id="renameButton">&#x270E; 重命名</button>
-        <button id="deleteButton">&#x1F5D1; 删除</button>
+    <div id="app">
+        <h2>局域网文件共享 Shared2</h2>
+        <input type="file" @change="uploadsHandler" id="fileInput" multiple hidden>
+        <div id="toolbar">
+            <button @click="downloadHandler">&#x1F4E5; 下载文件</button>
+            <button onclick="fileInput.click()">&#x1F4E4; 上传文件</button>
+            <button @click="refreshHandler">&#x21BB; 刷新</button>
+            <button @click="addFolderHandler">&#x1F4C1; 添加文件夹</button>
+            <button @click="renameHandler">&#x270E; 重命名</button>
+            <button @click="deleteHandler">&#x1F5D1; 删除</button>
+            <button @click="intoHandler(selectItem)">&#x1F4CD; 进入</button>
+        </div>
+
+        <div id="breadcrumb">
+            <span v-for="(item, index) in breadcrumbs" :key="index">
+                <a v-if="item !== '.'" href="javascript:void(0)" @click="gotoHandler(index)">{{ item }}</a>
+                <a v-else href="javascript:void(0)" @click="gotoHandler(0)">/根目录</a>
+
+                <span v-if="index < breadcrumbs.length - 1"> / </span>
+            </span>
+        </div>
+
+
+        <div id="fileList">
+            <table>
+                <tr v-for="item in files" @dblclick="intoHandler(item)" @click="selectHandler(item)"
+                    v-bind:class="{ 'selected': item.isActive  }">
+                    <td>{{ item.name }}</td>
+                    <td>{{ formatSize(item.size) }}</td>
+                    <td>{{ item.modTime }}</td>
+                </tr>
+            </table>
+        </div>
     </div>
 
-    <div id="breadcrumb">
-    </div>
+    <script type="text/javascript">
+        var app = new Vue({
+            el: '#app',
+            data: {
+                currentPath: '.',
+                breadcrumbs: ['.'],
+                selectItem: null,
+                files: []
+            },
+            mounted() {
+                var that = this
 
-    <div id="fileList"></div>
+                this.refreshHandler()
 
-    <hr>
+                // 添加拖拽事件
+                document.body.addEventListener('dragover', function (event) {
+                    event.preventDefault();
+                    document.body.classList.add('dragging');
+                });
+                document.body.addEventListener('dragleave', function (event) {
+                    document.body.classList.remove('dragging');
+                });
+                document.body.addEventListener('drop', function (event) {
+                    event.preventDefault();
+                    document.body.classList.remove('dragging');
+                    const files = event.dataTransfer.files;
+                    for (let i = 0; i < files.length; i++) {
+                        that.uploadHandler(files[i]);
+                    }
+                });
+            },
+            methods: {
+                selectHandler(item) {
+                    if (this.selectItem) {
+                        this.selectItem.isActive = false
+                    }
 
-    <script src="./script.js" type="text/javascript"></script>
+                    this.selectItem = item
+                    this.selectItem.isActive = true
+                },
+                gotoHandler(index) {
+                    if (index < this.breadcrumbs.length - 1) {
+                        this.breadcrumbs = this.breadcrumbs.slice(0, index + 1)
+                        this.currentPath = this.breadcrumbs.join('/')
+                        this.refreshHandler()
+                    }
+                },
+                intoHandler(item) {
+                    if (item == null) {
+                        alert('请选择文件夹')
+                        return
+                    }
+
+                    if (item.isDir) {
+                        var path = this.currentPath + '/' + item.name
+                        this.currentPath = path
+                        this.breadcrumbs = path.split('/')
+                        this.refreshHandler()
+                    } else {
+                        alert('不能进入文件')
+                    }
+                },
+                refreshHandler() {
+                    this.selectItem = null
+
+                    var that = this
+                    post('/api/files?path=' + encodeURIComponent(this.currentPath), null, function (data) {
+                        var list = JSON.parse(data)
+                        for (var i = 0; i < list.length; i++) {
+                            list[i].isActive = false
+                            if (list[i].modTime) {
+                                list[i].modTime = new Date(list[i].modTime).toLocaleString();
+                            }
+                        }
+                        that.files = list
+                    }, function () {
+                        alert('文件列表获取失败')
+                    })
+                },
+                deleteHandler() {
+                    if (!this.selectItem) {
+                        alert('请选择一个文件或文件夹')
+                        return
+                    }
+
+                    var selectedFile = this.selectItem.name
+                    if (confirm('确定要删除 ' + selectedFile + ' 吗？')) {
+                        var that = this
+
+                        var url = '/api/delete?name=' + encodeURIComponent(this.currentPath + '/' + selectedFile)
+                        post(url, null, function (data) {
+                            that.refreshHandler()
+                        }, function () {
+                            alert('文件列表获取失败')
+                        })
+                    }
+                },
+                addFolderHandler() {
+                    const folderName = prompt('输入新的文件夹名称:');
+                    if (folderName) {
+                        var that = this
+
+                        var url = '/api/addFolder?name=' + encodeURIComponent(folderName) + '&path=' + encodeURIComponent(this.currentPath)
+                        post(url, null, function (data) {
+                            that.refreshHandler()
+                        }, function () {
+                            alert('文件列表获取失败')
+                        })
+                    }
+                },
+                renameHandler() {
+                    if (!this.selectItem) {
+                        alert('请选择一个文件或文件夹')
+                        return
+                    }
+
+                    const selectedFile = this.selectItem.name
+                    const newName = prompt('输入新的文件名:', selectedFile);
+                    if (newName) {
+                        var that = this
+
+                        var url = '/api/rename?oldName=' + encodeURIComponent(this.currentPath + '/' + selectedFile) + '&newName=' + encodeURIComponent(newName)
+                        post(url, null, function (data) {
+                            that.refreshHandler()
+                        }, function () {
+                            alert('文件列表获取失败')
+                        })
+                    }
+                },
+                downloadHandler() {
+                    if (!this.selectItem) {
+                        alert('请选择一个文件或文件夹')
+                        return
+                    }
+                    var url = '/api/download?name=' + encodeURIComponent(this.currentPath + '/' + this.selectItem.name)
+                    window.open(url)
+                },
+                uploadHandler(file) {
+                    var that = this
+                    var url = '/api/upload'
+                    var data = {
+                        'file': file,
+                        'path': this.currentPath
+                    }
+                    post(url, data, function () {
+                        that.refreshHandler()
+                    }, function () {
+                        alert('文件列表获取失败')
+                    })
+                },
+                uploadsHandler() {
+                    var files = document.getElementById('fileInput').files
+                    for (var i = 0; i < files.length; i++) {
+                        this.uploadHandler(files[i]);
+                    }
+                }
+            }
+        })
+
+        function post(url, params, callback, err) {
+            var xhr = new XMLHttpRequest();
+            xhr.open('POST', url, true);
+            if (params) {
+                var formData = new FormData()
+                for (var key in params) {
+                    formData.append(key, params[key])
+                }
+                xhr.send(formData)
+            } else {
+                xhr.send()
+            }
+            xhr.onreadystatechange = function (data) {
+                if (xhr.readyState === 4) {
+                    if ((xhr.status >= 200 && xhr.status < 300) || xhr.status === 304) {
+                        if (callback) {
+                            callback(data.srcElement.response)
+                        }
+                    } else {
+                        if (err) {
+                            err()
+                        }
+                    }
+                }
+            }
+        }
+
+        function formatSize(size) {
+            if (size === 0) {
+                return 'NA';
+            }
+            const i = Math.floor(Math.log(size) / Math.log(1024));
+            return (size / Math.pow(1024, i)).toFixed(2) * 1 + ' ' + ['B', 'kB', 'MB', 'GB', 'TB'][i];
+        }
+
+    </script>
 </body>
 
 </html>
