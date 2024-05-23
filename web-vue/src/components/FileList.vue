@@ -17,7 +17,6 @@
             <span v-for="(item, index) in breadcrumbs" :key="index">
                 <a v-if="item !== '.'" href="javascript:void(0)" @click="gotoHandler(index)">{{ item }}</a>
                 <a v-else href="javascript:void(0)" @click="gotoHandler(0)">/所有文件</a>
-
                 <span v-if="index < breadcrumbs.length - 1"> / </span>
             </span>
         </div>
@@ -34,7 +33,16 @@
                 <tbody v-if="files.length > 0">
                     <tr v-for="item in files" v-bind:key="item.name" @dblclick="intoHandler(item)"
                         @click="selectHandler(item)" v-bind:class="{ 'selected': item.isActive }">
-                        <td>{{ item.name }}</td>
+                        <td>
+                            <span v-if="item.isEditMode" style="display: flex; align-items: center;">
+                                <input v-model="editFileName" type="text" class="editInput" ref="editInput"
+                                    @keyup.enter="submitRename" @keyup.esc="cancelRename" @blur="cancelRename"
+                                    @dblclick.stop>
+                                <van-button icon="success" type="primary" size="mini" @click="submitRename" />
+                                <van-button icon="cross" type="info" size="mini" @click="cancelRename" />
+                            </span>
+                            <span v-else>{{ item.name }}</span>
+                        </td>
                         <td>{{ formatSize(item.size) }}</td>
                         <td>{{ item.modTime }}</td>
                     </tr>
@@ -42,6 +50,12 @@
                 <van-empty v-else description="文件列表为空" />
             </table>
         </div>
+
+        <van-popup v-model="showPopup" position="top" :style="{ height: '100%' }" closeable>
+
+            <div class="popup-title" v-if="selectItem">{{ selectItem.name }}</div>
+            <pre class="popup-content" v-html="fileContent"></pre>
+        </van-popup>
     </div>
 </template>
 
@@ -59,6 +73,9 @@ export default {
     },
     data: function () {
         return {
+            showPopup: false,
+            editFileName: '',
+            fileContent: '',
             currentPath: '.',
             breadcrumbs: ['.'],
             selectItem: null,
@@ -86,6 +103,11 @@ export default {
                 that.uploadHandler(files[i]);
             }
         });
+
+        window.addEventListener('keydown', this.handleKeyDown);
+    },
+    beforeDestroy() {
+        window.removeEventListener('keydown', this.handleKeyDown);
     },
     methods: {
         selectHandler(item) {
@@ -108,6 +130,7 @@ export default {
                 Toast('请选择文件或文件夹')
                 return
             }
+            var that = this
 
             if (item.isDir) {
                 var path = this.currentPath + '/' + item.name
@@ -120,6 +143,13 @@ export default {
                     var url = baseURL + '/api/download?name=' + encodeURIComponent(this.currentPath + '/' + item.name)
                     this.imgPreview(url)
                     return
+                } else if (/(.txt$|.md$|.log$)/i.test(lowercaseName)) {
+                    post('/api/download?name=' + encodeURIComponent(this.currentPath + '/' + item.name), null, function (data) {
+                        that.fileContent = data
+                        that.showPopup = true
+                    }, function () {
+                        Toast('文件下载失败')
+                    })
                 } else {
                     Toast('暂不支持预览该文件')
                 }
@@ -133,6 +163,7 @@ export default {
                 var list = JSON.parse(data)
                 for (var i = 0; i < list.length; i++) {
                     list[i].isActive = false
+                    list[i].isEditMode = false
                     if (list[i].modTime) {
                         list[i].modTime = new Date(list[i].modTime).toLocaleString();
                     }
@@ -173,24 +204,55 @@ export default {
                 })
             }
         },
+        handleKeyDown(event) {
+            if (event.key === 'F2' && this.selectItem) {
+                this.renameHandler();
+                event.preventDefault(); // 阻止F2键的默认行为，如打开浏览器的查找功能
+            }
+        },
+        submitRename() {
+            if (this.editFileName.trim() !== '') {
+                this.selectItem.isEditMode = false
+
+                const selectedFile = this.selectItem.name
+                const newName = this.editFileName.trim()
+                if (newName) {
+                    var that = this
+
+                    var url = '/api/rename?oldName=' + encodeURIComponent(this.currentPath + '/' + selectedFile) + '&newName=' + encodeURIComponent(newName)
+                    post(url, null, function () {
+                        that.refreshHandler()
+                    }, function () {
+                        Toast('文件列表获取失败')
+                    })
+                }
+            } else {
+                this.selectItem.isEditMode = false
+            }
+            this.editFileName = ''
+        },
+        cancelRename() {
+            this.selectItem.isEditMode = false
+            this.editFileName = ''
+        },
         renameHandler() {
             if (!this.selectItem) {
                 Toast('请选择一个文件或文件夹')
                 return
             }
+            this.editFileName = this.selectItem.name
+            this.selectItem.isEditMode = true
 
-            const selectedFile = this.selectItem.name
-            const newName = prompt('输入新的文件名:', selectedFile);
-            if (newName) {
-                var that = this
-
-                var url = '/api/rename?oldName=' + encodeURIComponent(this.currentPath + '/' + selectedFile) + '&newName=' + encodeURIComponent(newName)
-                post(url, null, function () {
-                    that.refreshHandler()
-                }, function () {
-                    Toast('文件列表获取失败')
-                })
+            var endIndex = this.selectItem.name.lastIndexOf('.')
+            if (this.selectItem.isDir) {
+                endIndex = this.selectItem.name.length
             }
+
+            // 延迟执行，确保输入框被渲染
+            this.$nextTick(() => {
+                this.$refs.editInput[0].focus()
+                this.$refs.editInput[0].setSelectionRange(0, endIndex)
+            })
         },
         downloadHandler() {
             if (!this.selectItem) {
@@ -236,7 +298,7 @@ export default {
 }
 </script>
 
-<!-- Add "scoped" attribute to limit CSS to this component only -->
+
 <style scoped>
 html,
 body {
@@ -267,11 +329,6 @@ tbody tr.selected {
     outline: 2px dashed green;
 }
 
-.dragging {
-    background-color: #eee;
-    border: 3px dashed #aaa;
-}
-
 #breadcrumb a {
     font-size: 20px;
     line-height: 1.75;
@@ -279,5 +336,23 @@ tbody tr.selected {
 
 .van-button:not(:last-child) {
     margin-right: 5px;
+}
+
+.editInput {
+    height: 22px;
+    margin-right: 5px;
+}
+
+.popup-title {
+    height: 30px;
+    width: 97.75%;
+    border-bottom: 1px solid #dddddd;
+    padding: 10px;
+    font-size: 20px;
+}
+
+.popup-content {
+    padding: 10px;
+    width: 97%
 }
 </style>

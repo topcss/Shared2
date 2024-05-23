@@ -1,4 +1,5 @@
-var baseURL = 'http://localhost:8000'
+var baseURL = 'http://192.168.1.6:8000'
+// var baseURL = 'http://localhost:8000'
 // 如果是生成环境，则无需设置baseURL
 if (process.env.NODE_ENV === 'production') {
     baseURL = ''

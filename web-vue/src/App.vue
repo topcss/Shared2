@@ -16,12 +16,21 @@ export default {
 </script>
 
 <style>
+body {
+  margin: 0;
+  height: calc(100vh - 10px);
+}
 #app {
   font-family: Avenir, Helvetica, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   color: #2c3e50;
-  margin-top: 10px;
   padding: 5px;
+
+}
+
+.dragging {
+  background-color: #eee;
+  border: 3px dashed #aaa;
 }
 </style>
