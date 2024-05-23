@@ -1,4 +1,4 @@
 dist/
-static/*
+static/
 data/
 *.exe
