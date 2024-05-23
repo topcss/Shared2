@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"flag"
+	"github.com/rs/cors"
 	"io"
 	"log"
 	"net"
@@ -68,6 +69,17 @@ func main() {
 		os.MkdirAll(rootPath, os.ModePerm)
 	}
 
+	// 创建CORS中间件
+	corsConfig := cors.New(cors.Options{
+		AllowedOrigins:   []string{"*"}, // 允许所有来源，你可以替换为具体的域名
+		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowedHeaders:   []string{"Accept", "Content-Type", "Content-Length", "Accept-Encoding", "Authorization"},
+		AllowCredentials: true,
+	})
+
+	// 使用CORS中间件包装HTTP服务器
+	handler := corsConfig.Handler(http.DefaultServeMux)
+
 	// 处理静态文件的请求
 	fs := http.FS(staticFiles)
 	http.Handle("/", http.FileServer(fs))
@@ -82,7 +94,7 @@ func main() {
 
 	ip := getLocalIP()
 	log.Printf("启动HTTP服务: http://%s:%s/static 服务所在的文件目录是 %s \n", ip, *port, *dir)
-	log.Fatal(http.ListenAndServe("0.0.0.0:"+*port, nil))
+	log.Fatal(http.ListenAndServe("0.0.0.0:"+*port, handler))
 }
 
 func addFolderHandler(w http.ResponseWriter, r *http.Request) {
@@ -120,6 +132,7 @@ func renameHandler(w http.ResponseWriter, r *http.Request) {
 func downloadHandler(w http.ResponseWriter, r *http.Request) {
 	name := r.URL.Query().Get("name")
 	filePath := filepath.Join(rootPath, name)
+	fileName := filepath.Base(filePath)
 	info, err := os.Stat(filePath)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -128,7 +141,7 @@ func downloadHandler(w http.ResponseWriter, r *http.Request) {
 
 	if info.IsDir() {
 		// 创建一个zip文件
-		w.Header().Add("Content-Disposition", "attachment; filename="+url.QueryEscape(name)+".zip")
+		w.Header().Add("Content-Disposition", "attachment; filename="+url.QueryEscape(fileName)+".zip")
 		w.Header().Add("Content-Type", "application/zip")
 		zipWriter := zip.NewWriter(w)
 		defer zipWriter.Close()
@@ -163,8 +176,9 @@ func downloadHandler(w http.ResponseWriter, r *http.Request) {
 			return err
 		})
 	} else {
-		fileName := path.Base(filePath)
-		w.Header().Add("Content-Disposition", "attachment; filename="+url.QueryEscape(fileName))
+		encodedFileName := url.QueryEscape(fileName)
+		w.Header().Add("Content-Disposition", "attachment; filename="+encodedFileName)
+		w.Header().Add("Content-Type", "application/octet-stream")
 		http.ServeFile(w, r, filePath)
 	}
 }
