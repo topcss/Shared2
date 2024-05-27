@@ -91,10 +91,37 @@ func main() {
 	http.HandleFunc("/api/download", downloadHandler)
 	http.HandleFunc("/api/upload", uploadHandler)
 	http.HandleFunc("/api/files", filesHandler)
+	http.HandleFunc("/api/save", saveHandler)
 
 	ip := getLocalIP()
 	log.Printf("启动HTTP服务: http://%s:%s/static 服务所在的文件目录是 %s \n", ip, *port, *dir)
 	log.Fatal(http.ListenAndServe("0.0.0.0:"+*port, handler))
+}
+
+func saveHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "POST" {
+
+		path := r.FormValue("path")
+		content := r.FormValue("content")
+
+		filePath := filepath.Join(rootPath, path)
+		if _, err := os.Stat(filePath); os.IsNotExist(err) {
+			http.Error(w, "文件不存在", http.StatusNotFound)
+			return
+		}
+
+		if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		result := map[string]any{
+			"status":  "success",
+			"code":    200,
+			"message": "保存成功"}
+		json.NewEncoder(w).Encode(result)
+		return
+	}
 }
 
 func addFolderHandler(w http.ResponseWriter, r *http.Request) {

@@ -51,10 +51,18 @@
             </table>
         </div>
 
-        <van-popup v-model="showPopup" position="top" :style="{ height: '100%' }" closeable>
+        <van-popup v-model="showPopup" position="top" :style="{ height: '100%' }" closeable @close="popupClosed"
+            :close-on-click-overlay="false">
 
-            <div class="popup-title" v-if="selectItem">{{ selectItem.name }}</div>
-            <pre class="popup-content" v-html="fileContent"></pre>
+            <div class="popup-title" v-if="selectItem">
+                {{ selectItem.name }}
+
+                <van-button icon="success" type="info" size="small" @click="saveFile">
+                    保存
+                </van-button>
+            </div>
+            <CodeEditor @change="fileChange" class="popup-content" v-model="fileContent"></CodeEditor>
+
         </van-popup>
     </div>
 </template>
@@ -63,10 +71,13 @@
 import { ImagePreview, Toast } from 'vant';
 import 'vant/lib/index.css';
 import { post, baseURL } from '../tools/ajax'
+import CodeEditor from '@/components/Editor.vue'
+
 export default {
     name: 'HelloWorld',
     components: {
         [ImagePreview.Component.name]: ImagePreview.Component,
+        CodeEditor,
     },
     props: {
         msg: String
@@ -76,6 +87,7 @@ export default {
             showPopup: false,
             editFileName: '',
             fileContent: '',
+            newContent: '',
             currentPath: '.',
             breadcrumbs: ['.'],
             selectItem: null,
@@ -110,6 +122,30 @@ export default {
         window.removeEventListener('keydown', this.handleKeyDown);
     },
     methods: {
+        popupClosed() {
+            this.fileContent = ''
+            this.newContent = ''
+        },
+        saveFile() {
+            if (this.fileContent == this.newContent) {
+                Toast('文件内容未改变')
+                return
+            }
+
+            //  保存
+            post('/api/save', {
+                path: this.currentPath + "\\" + this.selectItem.name,
+                content: this.newContent
+            }, function (data) {
+                var obj = JSON.parse(data)
+                if (obj.message) {
+                    Toast(obj.message)
+                }
+            })
+        },
+        fileChange(newCode) {
+            this.newContent = newCode
+        },
         selectHandler(item) {
             if (this.selectItem) {
                 this.selectItem.isActive = false
@@ -146,6 +182,7 @@ export default {
                 } else if (/(.txt$|.md$|.log$)/i.test(lowercaseName)) {
                     post('/api/download?name=' + encodeURIComponent(this.currentPath + '/' + item.name), null, function (data) {
                         that.fileContent = data
+                        that.newContent = data
                         that.showPopup = true
                     }, function () {
                         Toast('文件下载失败')
@@ -353,6 +390,7 @@ tbody tr.selected {
 
 .popup-content {
     padding: 10px;
-    width: 97%
+    width: 98%;
+    height: 90%;
 }
 </style>
